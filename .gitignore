@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+abm-ui/node_modules/
+abm-ui/public/
+
+venv
+.environments
+.python-version
+
+src/
+model/
+models/
+data/
+uv.lock
+pyproject.toml

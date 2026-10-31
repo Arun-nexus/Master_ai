@@ -1,10 +1,14 @@
 import io
 import logging
 import os
+import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
+
+os.environ.setdefault("RECOGNITION_BATCH_SIZE", "16")
+os.environ.setdefault("DETECTOR_BATCH_SIZE", "4")
+
 import fitz
 import numpy as np
 import torch
@@ -22,11 +26,10 @@ MIN_IMAGE_AREA = 0.05
 MIN_CHUNK_CHARS = 400
 MAX_CHUNK_CHARS = 3000
 MIN_IMAGE_SIDE = 1600
-OCR_WORKERS = int(os.getenv("OCR_WORKERS", str(min(4, os.cpu_count() or 1))))
+OCR_PAGE_BATCH = int(os.getenv("OCR_PAGE_BATCH", "4"))
 EMBED_BATCH = int(os.getenv("EMBED_BATCH", "64"))
 
 logging.getLogger("faiss.loader").setLevel(logging.WARNING)
-logging.getLogger("RapidOCR").setLevel(logging.ERROR)
 log = logging.getLogger("pdf_ocr")
 
 
@@ -47,26 +50,39 @@ def _make_embeddings() -> HuggingFaceEmbeddings:
 embeddings = _make_embeddings()
 _chunker = SemanticChunker(embeddings, breakpoint_threshold_type="percentile")
 
-_tls = threading.local()
-_ocr_pool = ThreadPoolExecutor(OCR_WORKERS, thread_name_prefix="ocr")
+_lock = threading.Lock()
+_surya = {}
 
 
 def _get_ocr():
-    if not hasattr(_tls, "ocr"):
-        try:
-            from rapidocr_onnxruntime import RapidOCR
-        except ImportError:
-            from rapidocr import RapidOCR
-        _tls.ocr = RapidOCR()
-    return _tls.ocr
+    if "rec" not in _surya:
+        from surya.detection import DetectionPredictor
+        from surya.foundation import FoundationPredictor
+        from surya.recognition import RecognitionPredictor
+        _surya["det"] = DetectionPredictor()
+        _surya["rec"] = RecognitionPredictor(FoundationPredictor())
+    return _surya["rec"], _surya["det"]
+
+
+def _clean(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
+def _ocr_batch(imgs: List[np.ndarray]) -> List[str]:
+    if not imgs:
+        return []
+    with _lock:
+        rec, det = _get_ocr()
+        res = rec([Image.fromarray(i) for i in imgs], det_predictor=det)
+    out = []
+    for r in res:
+        lines = (_clean(l.text) for l in r.text_lines)
+        out.append("\n".join(l for l in lines if l))
+    return out
 
 
 def _ocr_image(img: np.ndarray) -> str:
-    out = _get_ocr()(img)
-    if hasattr(out, "txts"):
-        return "\n".join(out.txts) if out.txts else ""
-    result = out[0] if isinstance(out, tuple) else out
-    return "\n".join(r[1] for r in result) if result else ""
+    return _ocr_batch([img])[0]
 
 
 def _render(page: "fitz.Page", dpi: int) -> np.ndarray:
@@ -87,7 +103,6 @@ def _image_area_ratio(page: "fitz.Page") -> float:
 
 
 def _merge(native: str, ocr: str) -> str:
-    """OCR ki sirf wahi lines jodo jo native text mein pehle se nahi hain."""
     seen = {" ".join(l.split()).lower() for l in native.splitlines() if l.strip()}
     extra = [l for l in ocr.splitlines() if l.strip() and " ".join(l.split()).lower() not in seen]
     return (native + "\n" + "\n".join(extra)).strip() if extra else native
@@ -97,17 +112,19 @@ def _pdf_pages(data: bytes, name: str) -> List[str]:
     with fitz.open(stream=data, filetype="pdf") as pdf:
         n = len(pdf)
         results = [""] * n
-        pending = [] 
+        pending = []
 
         def flush():
             if not pending:
                 return
-            texts = list(_ocr_pool.map(_ocr_image, [p[2] for p in pending]))
+            texts = _ocr_batch([p[2] for p in pending])
             for (i, native, _), t in zip(pending, texts):
                 if not t:
                     t = _ocr_image(_render(pdf[i], OCR_RETRY_DPI))
                 results[i] = _merge(native, t) if native and t else (t or native)
             pending.clear()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         for i in range(n):
             page = pdf[i]
@@ -116,7 +133,7 @@ def _pdf_pages(data: bytes, name: str) -> List[str]:
                 results[i] = native
                 continue
             pending.append((i, native, _render(page, OCR_DPI)))
-            if len(pending) >= OCR_WORKERS * 2:  
+            if len(pending) >= OCR_PAGE_BATCH:
                 flush()
         flush()
         log.info("[%s] %d pages, %d non-empty", name, n, sum(1 for r in results if r))

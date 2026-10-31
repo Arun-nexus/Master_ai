@@ -21,3 +21,4 @@ models/
 data/
 uv.lock
 pyproject.toml
+.env

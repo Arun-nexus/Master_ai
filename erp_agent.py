@@ -31,7 +31,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from auth import AuthExpired
 from extract import gpu_lock
-from rag import chat_generate
+from llm import chat_generate, ERP_MODEL
 
 log = logging.getLogger("erp_agent")
 
@@ -816,7 +816,7 @@ class ERPAgent:
     @staticmethod
     def _generate(messages, schemas) -> str:
         with gpu_lock:
-            return chat_generate(messages, schemas, MAX_NEW_TOKENS if schemas else FINAL_NEW_TOKENS)
+            return chat_generate(messages, schemas, MAX_NEW_TOKENS if schemas else FINAL_NEW_TOKENS, model=ERP_MODEL)
 
     @staticmethod
     def _approval(call: dict) -> dict:

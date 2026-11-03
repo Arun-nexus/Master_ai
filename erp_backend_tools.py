@@ -1,37 +1,3 @@
-"""
-erp_backend_tools.py  -  BACKEND-HEAVY MCP tools for the Acer Biomedical ERP
-===========================================================================
-
-Kyun? ERP ka frontend (orders.js, inventory.js ...) filter / search / sort / cards / warranty / overdue /
-ledger ka sara kaam browser me karta hai. MCP client (Claude etc.) ke paas browser nahi hota, isliye woh
-raw routes se poora dataset kheench ke khud calculate karne me atak jata hai.
-
-Ye file wahi sara kaam SERVER SIDE karti hai:
-  filter  -> search + filters + sort + pagination + cards + group_by, sab ek call me, chhota compact output
-  view    -> ek record (compact summary + poora record)
-  summary -> sirf page ke cards (counts / totals)
-  add / update / delete + page ke workflow actions -> app.py ke EXISTING routes ko hi call karti hai
-
-Decoupling:
-  * app.py me KOI change nahi. Sirf uske routes call hote hain.
-  * Default = HTTP (ERP_BASE_URL). Chaho to ERP_INPROCESS=1 karke app.py ko import karke
-    in-process call karo (network nahi lagta, phir bhi app.py edit nahi hota).
-  * tools.py se koi import nahi - dono alag alag chal sakti hain.
-
-.env:
-  ERP_BASE_URL, ERP_USERNAME, ERP_PASSWORD, APP_CLIENT_KEY, ERP_TIMEOUT   (tools.py jaise hi)
-  ERP_TOKEN        optional ready token
-  ERP_CACHE_TTL    seconds (default 20) - list routes ka chhota cache, har write par clear ho jata hai
-  ERP_INPROCESS    1 => app.py ko import karke call karo
-  ERP_APP_MODULE   default "app"
-  ERP_APP_PATH     ERP ke app.py ka full path (master AI ke apne app.py se naam clash ho to yahi use karo)
-  ERP_TOOL_PREFIX  tool naam prefix (default "erp_")      ERP_TOOLS  sirf ye pages expose karo, e.g. "orders,dispatch"
-  ERP_DOC_MODE     short (default, chhote local model ke liye) | full
-  ERP_EXPOSE_AUTH_TOKEN  1 (default) = tools me auth_token param (web app inject karta hai) | 0 = model se chhupao, service account use
-  MCP_TRANSPORT / MCP_HOST / MCP_PORT   (stdio | http | sse ...)
-
-Run:  python erp_backend_tools.py
-"""
 import asyncio
 import hashlib
 import importlib
@@ -60,10 +26,10 @@ TIMEOUT = float(os.getenv("ERP_TIMEOUT", "60"))
 CACHE_TTL = float(os.getenv("ERP_CACHE_TTL", "20"))
 INPROCESS = os.getenv("ERP_INPROCESS", "").strip().lower() in ("1", "true", "yes")
 APP_MODULE = os.getenv("ERP_APP_MODULE", "app")
-APP_PATH = os.getenv("ERP_APP_PATH", "").strip()        # ERP ke app.py ka full path (naam-clash se bachne ke liye)
-TOOL_PREFIX = os.getenv("ERP_TOOL_PREFIX", "erp_")        # tools.py ke saath ek hi client me chalana ho to badlo, e.g. "erp2_"
-ONLY_TOOLS = {x.strip().lower() for x in os.getenv("ERP_TOOLS", "").split(",") if x.strip()}   # e.g. "orders,inventory"
-DOC_MODE = os.getenv("ERP_DOC_MODE", "short").lower()     # short = chhote model (4B, 6k ctx) ke liye; full = bade model ke liye
+APP_PATH = os.getenv("ERP_APP_PATH", "").strip()        
+TOOL_PREFIX = os.getenv("ERP_TOOL_PREFIX", "erp_")        
+ONLY_TOOLS = {x.strip().lower() for x in os.getenv("ERP_TOOLS", "").split(",") if x.strip()}  
+DOC_MODE = os.getenv("ERP_DOC_MODE", "short").lower()   
 EXPOSE_TOKEN = os.getenv("ERP_EXPOSE_AUTH_TOKEN", "1").strip().lower() in ("1", "true", "yes")
 
 mcp = FastMCP("Acer Biomedical ERP - backend tools")
@@ -72,10 +38,6 @@ _auth = {"token": os.getenv("ERP_TOKEN", "").strip() or None}
 _auth_lock = asyncio.Lock()
 _HIDDEN_KEYS = {"password", "confirm_password"}
 
-
-# ======================================================================================
-# 1. TRANSPORT  (HTTP ya in-process, dono me app.py ke routes hi call hote hain)
-# ======================================================================================
 class ErpError(Exception):
     def __init__(self, status: int, detail: Any):
         super().__init__(str(detail))
@@ -91,7 +53,7 @@ def _make_client() -> httpx.AsyncClient:
             if APP_PATH:
                 folder = os.path.dirname(os.path.abspath(APP_PATH))
                 if folder not in sys.path:
-                    sys.path.append(folder)            # ERP ke apne imports (order.*, user.* ...) chalne ke liye
+                    sys.path.append(folder)           
                 spec = importlib.util.spec_from_file_location("erp_app_module", APP_PATH)
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
@@ -139,7 +101,6 @@ async def _http(method: str, path: str, params: dict | None, body: Any, token: s
         return r.status_code, {"detail": r.text[:500]}
 
 
-# ---- chhota TTL cache (sirf bina-params GET lists), har write par clear ----------------
 _cache: dict = {}
 
 
@@ -200,9 +161,6 @@ async def _dataset_safe(path: str, token: str) -> list:
         return []
 
 
-# ======================================================================================
-# 2. SMALL HELPERS
-# ======================================================================================
 def _shrink(o: Any, max_list: int = 100, max_str: int = 1500):
     if isinstance(o, str):
         return f"<{len(o)} chars omitted>" if (o.startswith("data:") or len(o) > max_str) else o
@@ -259,7 +217,6 @@ def _day(v):
 
 
 def _local_day(v):
-    """ISO datetime (UTC / naive) -> server-local date."""
     if not v:
         return None
     try:
@@ -302,7 +259,6 @@ _OPS = ("__gte", "__lte", "__gt", "__lt", "__ne", "__in", "__contains")
 
 
 def _generic_filter(raw: dict, brief: dict, key: str, val: Any) -> bool:
-    """Koi bhi field: brief key ya raw dotted path.  amount__gte, status__in, name__contains, x__ne ..."""
     op = "eq"
     for s in _OPS:
         if key.endswith(s):
@@ -328,16 +284,11 @@ def _generic_filter(raw: dict, brief: dict, key: str, val: Any) -> bool:
     return _low(cur) == _low(val)
 
 
-# ======================================================================================
-# 3. RESOURCE ENGINE
-# ======================================================================================
 def R(method, path, wrap=None):
     return (method, path, wrap)
 
 
 class Res:
-    """Ek ERP page. loader = raw rows (derived data `__x` ke saath), brief = compact row,
-    hay = search text, filters = named filters, cards = page ke top cards."""
 
     def __init__(self, name, tool_name, loader, ids, brief, hay, doc, *, filters=None, sorts=None,
                  default_sort="", cards=None, date_of=None, routes=None, extra=None, before=None,
@@ -575,13 +526,9 @@ def _make_tool(res: Res):
     return tool
 
 
-# ======================================================================================
-# 4. PAGE DEFINITIONS
-# ======================================================================================
 TODAY = lambda: date.today()
 
 
-# -------------------------------- ORDERS (orders.js) ---------------------------------
 async def _orders_loader(token):
     return list(reversed(await _dataset("/order/", token)))
 
@@ -707,7 +654,6 @@ ORDERS = Res(
 )
 
 
-# ------------------------------ INVENTORY (inventory.js) -----------------------------
 async def _inv_loader(token):
     return list(reversed(await _dataset("/inventory/", token)))
 
@@ -833,7 +779,6 @@ async def _inv_available_serials(res, id, id2, data, token):
 async def _inv_invoice_lookup(res, id, id2, data, token):
     return await _inv_get_route("/invoice/lookup", {"invoice_no": id or data.get("invoice_no") or ""}, token)
 
-
 INVENTORY = Res(
     "inventory", "erp_inventory", _inv_loader, lambda p: [p.get("_id")], _inv_brief,
     lambda p: " ".join(str(p.get(f) or "") for f in _INV_FIELDS),
@@ -876,7 +821,6 @@ INVENTORY = Res(
 )
 
 
-# ------------------------------ SHIPMENTS (shipment.js) ------------------------------
 async def _ship_loader(token):
     return list(await _dataset("/shipment/", token))
 
@@ -1031,8 +975,6 @@ ASSEMBLY = Res(
     extra={"available_parts": _asm_available_parts},
 )
 
-
-# ----------------------------- ALLOCATIONS (allocated.js) ----------------------------
 async def _alloc_loader(token):
     out = []
     now = datetime.now()
@@ -1117,8 +1059,6 @@ ALLOCATIONS = Res(
             "reassign_demo": R("POST", "/allocation/reassign_demo/{id}")},
 )
 
-
-# ------------------------------- DISPATCH (dispatch.js) ------------------------------
 _DISPATCH_KEYS = [("pending_orders", "order", False), ("dispatched_orders", "order", True),
                   ("pending_spare_parts", "spare_part", False), ("dispatched_spare_parts", "spare_part", True),
                   ("pending_product_allocations", "product_allocation", False),
@@ -1230,7 +1170,6 @@ DISPATCH = Res(
 )
 
 
-# ------------------------------ SERVICES (script.js) ---------------------------------
 async def _svc_loader(token):
     svcs, orders = await asyncio.gather(_dataset("/service/", token), _dataset_safe("/order/", token))
     by_serial, by_pid = {}, {}
@@ -1330,8 +1269,6 @@ SERVICES = Res(
             "available_hologram_parts": R("GET", "/service/available_hologram_parts")},
 )
 
-
-# ---------------------------- INSTALLATIONS (script.js) ------------------------------
 async def _inst_loader(token):
     return list(reversed(await _dataset("/installation/", token)))
 
@@ -1365,7 +1302,6 @@ INSTALLATIONS = Res(
 )
 
 
-# -------------------------- CUSTOMERS / COMPANIES (users.js) -------------------------
 def _entry_key(x):
     return str(x.get("return_date") or x.get("debit_date") or x.get("added_at") or "")
 
@@ -1501,7 +1437,6 @@ CUSTOMERS = Res(
 )
 
 
-# ------------------------------- USERS (users.js) ------------------------------------
 async def _users_loader(token):
     return list(await _dataset_any(["/account/", "/account/users"], token))
 
@@ -1532,8 +1467,6 @@ USERS = Res(
             "delete": R("POST", "/login/delete_account/{id}")},
 )
 
-
-# ------------------------- REQUESTS (allocated.js / orders.js) -----------------------
 async def _req_loader(token):
     return list(reversed(await _dataset_any(["/request/", "/request/mine"], token)))
 
@@ -1581,7 +1514,6 @@ REQUESTS = Res(
 )
 
 
-# ------------------------- WORK (work.html / work_report.html) -----------------------
 _PRIO = {"urgent": 4, "high": 3, "normal": 2, "low": 1}
 
 
@@ -1635,10 +1567,6 @@ WORK = Res(
             "seen": R("POST", "/work/{id}/seen")},
 )
 
-
-# ======================================================================================
-# 5. REGISTER TOOLS  +  one-shot overview
-# ======================================================================================
 ALL_RESOURCES = [ORDERS, INVENTORY, SHIPMENTS, ASSEMBLY, ALLOCATIONS, DISPATCH, SERVICES, INSTALLATIONS,
                  CUSTOMERS, USERS, REQUESTS, WORK]
 ALL_RESOURCES = [r for r in ALL_RESOURCES if not ONLY_TOOLS or r.name in ONLY_TOOLS]

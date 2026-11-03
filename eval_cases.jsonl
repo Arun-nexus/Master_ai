@@ -1,0 +1,12 @@
+{"kind":"tool","q":"show latest 10 orders","card":"orders","re":["10"]}
+{"kind":"tool","q":"pending orders dikhao","card":"orders","re":["placed|pending"]}
+{"kind":"tool","q":"low stock items","card":"inventory","re":["low"]}
+{"kind":"tool","q":"out of stock products","card":"inventory","re":["out|zero"]}
+{"kind":"tool","q":"companies with debit above 5 lakh","card":"customers","re":["500000"]}
+{"kind":"tool","q":"overdue companies","card":"customers","re":["overdue"]}
+{"kind":"tool","q":"count of orders per status","card":"orders","re":["group_by.{0,5}status"]}
+{"kind":"tool","q":"all technicians","card":"users","re":["technician"]}
+{"kind":"tool","q":"in progress services","card":"services","re":["in_progress|in progress"]}
+{"kind":"tool","q":"pending requests","card":"requests","re":["pending"]}
+{"kind":"text","prompt":"Extract specs as 'Parameter: value' lines. Text: Operating voltage 230V AC, power 450W, weight 12.5 kg, IP rating IP54. Contact us at sales@x.com.","contains":["230","450","12.5","IP54"]}
+{"kind":"text","prompt":"Extract every technical requirement, one per line starting with '- '. Text: The ventilator shall provide tidal volume 50-1500 ml and PEEP 0-30 cmH2O. Payment within 30 days.","contains":["50","1500","PEEP"]}

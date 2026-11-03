@@ -1,0 +1,53 @@
+[agents]
+erp = "gpt-6-sol"
+chat = "gpt-6-luna"
+extract = "gpt-6-luna"
+
+[eval]
+models = ["gpt-6-luna", "gpt-6-sol"]
+
+[models.claude-haiku-5-5]
+provider = "anthropic"
+id = "claude-haiku-5-5"
+input = 0.10
+output = 0.50
+temperature = 0
+
+[models.claude-sonnet-5-5]
+provider = "anthropic"
+id = "claude-sonnet-5-5"
+input = 2.0
+output = 10.0
+temperature = 0
+
+[models.gpt-6-luna]
+provider = "openai"
+id = "gpt-6-luna"
+input = 0.10
+output = 0.50
+reasoning_effort = "none"
+
+[models.gpt-6-sol]
+provider = "openai"
+id = "gpt-6-sol"
+input = 2.0
+output = 10.0
+reasoning_effort = "none"
+
+[models.gemini-3-6-flash]
+provider = "gemini"
+id = "gemini-3.6-flash"
+input = 0.75
+output = 3.75
+
+[models.gemini-3-5-flash]
+provider = "gemini"
+id = "gemini-3.5-flash"
+input = 1.5
+output = 9.0
+
+[models.gemini-3-5-flash-lite]
+provider = "gemini"
+id = "gemini-3.5-flash-lite"
+input = 0.30
+output = 2.50

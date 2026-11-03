@@ -1,7 +1,7 @@
-import threading
-from rag import generate_batch
+import contextlib
+from llm import generate_batch
 
-gpu_lock = threading.Lock()
+gpu_lock = contextlib.nullcontext()
 
 SPEC_PROMPT = (
     "Extract only technical specifications, features, ratings, dimensions, "

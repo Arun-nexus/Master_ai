@@ -19,22 +19,18 @@ from openpyxl import Workbook
 from pdf_ocr import extract_chunks, extract_text, embeddings
 from pydantic import BaseModel
 from extract import run_batch, spec_summaries, extract_requirements, gpu_lock
-from rag import chat_generate
+from llm import chat_generate
 import auth
 from auth import AuthExpired, LoginFailed
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("app")
 app = FastAPI()
-app.add_middleware(   # only needed if the React dev server is opened without the vite proxy
+app.add_middleware(  
     CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# ---------------- login (ERP accounts) ----------------
-# Optional: limit Tender tools (products, bids, Tender AI) to some ERP roles, e.g. TENDER_ROLES=admin,accounts
-# Empty = every logged-in ERP user. The ERP assistant is open to every ERP user; the ERP itself enforces
-# what each role may do, because tool calls use that user's own ERP token.
 TENDER_ROLES = {r.strip() for r in os.getenv("TENDER_ROLES", "").split(",") if r.strip()}
 
 
@@ -134,7 +130,7 @@ def product_names() -> list:
     return [p.name for p in PRODUCTS.iterdir() if (p / "index.faiss").exists()]
 
 
-erp_agent = None   # ERP agent (cards) - started on app startup, optional
+erp_agent = None 
 
 
 @app.on_event("startup")
@@ -150,11 +146,10 @@ async def warm_up():
             agent = ERPAgent()
             await agent.start()
             erp_agent = agent
-        except Exception as e:   # tender features must keep working even if ERP/uv is not set up
+        except Exception as e: 
             log.warning("ERP agent not started: %s", e)
 
 
-# ---------------- normal AI (tender assistant) ----------------
 GENERAL_PROMPT = (
     "You are Kiwi, the assistant of Acer Biomedicals, developed by Acer Biomedicals. Never mention Qwen "
     "or Alibaba. Help with tenders, bids and medical product specifications. If product context is "

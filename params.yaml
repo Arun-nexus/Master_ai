@@ -1,0 +1,8 @@
+model: "claude-haiku-5-5"
+max_tokens: 8192
+embedding_model: "BAAI/bge-m3"
+storage_path: "Data/faiss"
+chunk_size: 1000
+chunk_overlap: 150
+max_query_chunks: 8
+max_doc_chars: 20000

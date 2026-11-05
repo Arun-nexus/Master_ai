@@ -13,6 +13,7 @@ export default function Chat() {
   const [up, setUp] = useState({ product: "", kind: "catalogue", file: null });
   const [upMsg, setUpMsg] = useState(null);
   const [upBusy, setUpBusy] = useState(false);
+  const [menu, setMenu] = useState(false); // product drawer (phones only)
   const end = useRef();
 
   const load = () => api.products().then(setProducts).catch((e) => setUpMsg({ ok: false, text: e.message }));
@@ -79,14 +80,33 @@ export default function Chat() {
 
   return (
     <div className="chat">
-      <aside className="side">
+      <aside className={menu ? "side open" : "side"}>
+        <div className="drawerhead">
+          <b>Products</b>
+          <button className="ghost sm" onClick={() => setMenu(false)}>
+            ✕ Close
+          </button>
+        </div>
         <input className="search" placeholder="Search catalogues..." value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="list">
-          <div className={sel === "" ? "item on" : "item"} onClick={() => setSel("")}>
+          <div
+            className={sel === "" ? "item on" : "item"}
+            onClick={() => {
+              setSel("");
+              setMenu(false);
+            }}
+          >
             General chat
           </div>
           {shown.map((p) => (
-            <div key={p.name} className={sel === p.name ? "item on" : "item"} onClick={() => setSel(p.name)}>
+            <div
+              key={p.name}
+              className={sel === p.name ? "item on" : "item"}
+              onClick={() => {
+                setSel(p.name);
+                setMenu(false);
+              }}
+            >
               <b>{p.name}</b>
               <small>{p.sources.map((s) => s.kind).join(" + ") || "—"}</small>
             </div>
@@ -122,7 +142,12 @@ export default function Chat() {
         </div>
       </aside>
       <section className="convo">
-        <div className="title">{sel || "General chat"}</div>
+        <div className="title row between">
+          <span className="ttxt">{sel || "General chat"}</span>
+          <button className="ghost sm menubtn" onClick={() => setMenu(true)}>
+            ☰ Products
+          </button>
+        </div>
         <div className="msgs">
           {msgs.length === 0 && (
             <div className="empty">{sel ? `Ask anything about ${sel}` : "Select a product to chat about it, or ask anything."}</div>

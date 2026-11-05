@@ -190,10 +190,7 @@ def delete_product(name: str, _: str = Depends(user_token)) -> dict[str, str]:
     store = get_store()
     if not store.has(name):
         raise HTTPException(status_code=404, detail="not found")
-    with store._lock:
-        store._remove(name)
-        if store.index is not None:
-            store._persist()
+    store.remove(name)
     return {"deleted": name}
 
 
@@ -528,3 +525,10 @@ def compliance_sheet(req: SheetReq, _: str = Depends(user_token)) -> dict[str, A
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+_static = Path(__file__).parent / "static"
+if _static.is_dir():  
+    app.mount("/", StaticFiles(directory=_static, html=True), name="static")

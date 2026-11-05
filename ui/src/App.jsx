@@ -4,6 +4,7 @@ import Login from "./Login.jsx";
 import Chat from "./Chat.jsx";
 import Erp from "./Erp.jsx";
 import Files from "./Files.jsx";
+import Splash from "./splash.jsx";
 
 const TABS = [
   ["chat", "Product Chat"],
@@ -21,12 +22,15 @@ function initial() {
 export default function App() {
   const [user, setUser] = useState(initial);
   const [tab, setTab] = useState("chat");
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const out = () => setUser(null);
     window.addEventListener("logout", out);
     return () => window.removeEventListener("logout", out);
   }, []);
+
+  if (!ready) return <Splash onReady={() => setReady(true)} />;
 
   if (!user) {
     return (

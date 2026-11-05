@@ -4,3 +4,4 @@ venv
 ui/node_modules
 Data/
 __pycache__
+logs/

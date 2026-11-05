@@ -47,6 +47,20 @@ async function req(path, opts = {}) {
   return r;
 }
 
+// Backend reachable? Any real HTTP answer (even 401/404) means the server is up.
+// Network failure or proxy errors (502/503/504) mean it is still starting.
+export async function pingBackend() {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch("/api/health", { signal: ctl.signal, cache: "no-store" });
+    clearTimeout(t);
+    return r.status < 500;
+  } catch {
+    return false;
+  }
+}
+
 const j = (p) => p.then((r) => r.json());
 const q = (n) => "?name=" + encodeURIComponent(n);
 

@@ -22,13 +22,15 @@ BATCH = 64
 
 @lru_cache(maxsize=1)
 def get_embedder() -> SentenceTransformer:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    cuda = torch.cuda.is_available()
     name = get_params()["embedding_model"]
-    logger.info("loading embedding model %s on %s", name, device)
-    model = SentenceTransformer(name, device=device)
-    model.max_seq_length = 512
-    if device == "cuda":
-        model.half()
+    logger.info("loading embedding model %s", name)
+    model = SentenceTransformer(
+        name,
+        device="cuda" if cuda else "cpu",
+        model_kwargs={"torch_dtype": torch.float16 if cuda else torch.bfloat16},
+    )
+    model.max_seq_length = 384
     return model
 
 
@@ -77,7 +79,7 @@ class QdrantVectorStore:
             with torch.inference_mode():
                 emb = self.model.encode(
                     texts,
-                    batch_size=8,
+                    batch_size=4,
                     convert_to_numpy=True,
                     normalize_embeddings=True,
                     show_progress_bar=False,

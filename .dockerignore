@@ -1,0 +1,8 @@
+venv
+**/node_modules
+ui/dist
+Data
+logs
+__pycache__
+.git
+.vscode

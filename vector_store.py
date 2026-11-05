@@ -42,7 +42,6 @@ def _chunk_id(name: str, i: int) -> str:
 
 class QdrantVectorStore:
     def __init__(self) -> None:
-        self.model = get_embedder()
         self._lock = RLock()
         self.client = QdrantClient(
             url=os.environ["QDRANT_URL"],
@@ -51,8 +50,12 @@ class QdrantVectorStore:
         )
         self._init_collections()
 
+    @property
+    def model(self) -> SentenceTransformer:
+        return get_embedder()
+
     def _init_collections(self) -> None:
-        dim = self.model.get_sentence_embedding_dimension()
+        dim = int(os.getenv("EMBED_DIM", "1024"))
         if not self.client.collection_exists(CHUNKS):
             self.client.create_collection(
                 CHUNKS,
@@ -94,6 +97,7 @@ class QdrantVectorStore:
             ),
         )
         self.client.delete(DOCS, points_selector=models.PointIdsList(points=[_doc_id(name)]))
+
     def remove(self, name: str) -> None:
         with self._lock:
             self._remove(name)
@@ -170,14 +174,18 @@ class QdrantVectorStore:
             raise ValueError("Query cannot be empty")
 
         vecs = self._encode(query_texts)
+        responses = self.client.query_batch_points(
+            CHUNKS,
+            requests=[
+                models.QueryRequest(query=v.tolist(), limit=k * 3, with_payload=True)
+                for v in vecs
+            ],
+        )
         total: dict[str, float] = {}
         best: dict[str, tuple[float, str]] = {}
-        for v in vecs:
-            pts = self.client.query_points(
-                CHUNKS, query=v.tolist(), limit=k * 3, with_payload=True
-            ).points
+        for resp in responses:
             per_query: dict[str, float] = {}
-            for p in pts:
+            for p in resp.points:
                 n = p.payload["name"]
                 s = float(p.score)
                 if s > per_query.get(n, -1.0):

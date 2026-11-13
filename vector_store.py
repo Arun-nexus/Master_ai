@@ -1,16 +1,14 @@
 import os
 import re
+import time
 import uuid
 from functools import lru_cache
 from threading import RLock
 from typing import Any
 
-import numpy as np
-import torch
+import voyageai
 from qdrant_client import QdrantClient, models
-from sentence_transformers import SentenceTransformer
 
-from configuration import get_params
 from logger import logger
 from schemas import Chunk, SearchHit
 
@@ -18,20 +16,39 @@ SRC_RE = re.compile(r"(?m)^## \[(catalogue|manual)\] (.+)$")
 CHUNKS = "chunks"
 DOCS = "docs"
 BATCH = 64
+EMBED_BATCH = 64
+MODEL = os.getenv("VOYAGE_MODEL", "voyage-4")
+DIM = int(os.getenv("EMBED_DIM", "1024"))
 
 
 @lru_cache(maxsize=1)
-def get_embedder() -> SentenceTransformer:
-    cuda = torch.cuda.is_available()
-    name = get_params()["embedding_model"]
-    logger.info("loading embedding model %s", name)
-    model = SentenceTransformer(
-        name,
-        device="cuda" if cuda else "cpu",
-        model_kwargs={"torch_dtype": torch.float16 if cuda else torch.bfloat16},
-    )
-    model.max_seq_length = 384
-    return model
+def get_voyage() -> voyageai.Client:
+    return voyageai.Client(api_key=os.environ["VOYAGE_API_KEY"], max_retries=2, timeout=60)
+
+
+def embed(texts: list[str], input_type: str) -> list[list[float]]:
+    client = get_voyage()
+    out: list[list[float]] = []
+    for s in range(0, len(texts), EMBED_BATCH):
+        part = texts[s : s + EMBED_BATCH]
+        for attempt in range(6):
+            try:
+                res = client.embed(
+                    part,
+                    model=MODEL,
+                    input_type=input_type,
+                    output_dimension=DIM,
+                    truncation=True,
+                )
+                out.extend(res.embeddings)
+                break
+            except voyageai.error.RateLimitError:
+                if attempt == 5:
+                    raise
+                wait = 5 * (attempt + 1)
+                logger.warning("voyage rate limit, retrying in %ss", wait)
+                time.sleep(wait)
+    return out
 
 
 def _doc_id(name: str) -> str:
@@ -52,16 +69,11 @@ class QdrantVectorStore:
         )
         self._init_collections()
 
-    @property
-    def model(self) -> SentenceTransformer:
-        return get_embedder()
-
     def _init_collections(self) -> None:
-        dim = int(os.getenv("EMBED_DIM", "1024"))
         if not self.client.collection_exists(CHUNKS):
             self.client.create_collection(
                 CHUNKS,
-                vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
+                vectors_config=models.VectorParams(size=DIM, distance=models.Distance.COSINE),
             )
         self.client.create_payload_index(CHUNKS, "name", models.PayloadSchemaType.KEYWORD)
         if not self.client.collection_exists(DOCS):
@@ -73,21 +85,6 @@ class QdrantVectorStore:
     @staticmethod
     def _info(text: str) -> dict[str, Any]:
         return {"chars": len(text), "sources": [{"kind": k, "file": f} for k, f in SRC_RE.findall(text)]}
-
-    def _encode(self, texts: list[str]) -> np.ndarray:
-        try:
-            with torch.inference_mode():
-                emb = self.model.encode(
-                    texts,
-                    batch_size=4,
-                    convert_to_numpy=True,
-                    normalize_embeddings=True,
-                    show_progress_bar=False,
-                )
-        finally:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        return np.asarray(emb, dtype=np.float32)
 
     def _remove(self, name: str) -> None:
         self.client.delete(
@@ -107,12 +104,12 @@ class QdrantVectorStore:
     def add(self, name: str, text: str, chunks: list[Chunk]) -> int:
         if not chunks:
             raise ValueError("Chunks list empty hai")
+        emb = embed([c["content"] for c in chunks], "document")
         with self._lock:
             if self.has(name):
                 logger.info("replacing existing document '%s'", name)
                 self._remove(name)
 
-            emb = self._encode([c["content"] for c in chunks])
             for s in range(0, len(chunks), BATCH):
                 part = chunks[s : s + BATCH]
                 self.client.upsert(
@@ -120,7 +117,7 @@ class QdrantVectorStore:
                     points=[
                         models.PointStruct(
                             id=_chunk_id(name, c["metadata"]["chunk_id"]),
-                            vector=emb[s + j].tolist(),
+                            vector=emb[s + j],
                             payload={
                                 "name": name,
                                 "chunk_id": c["metadata"]["chunk_id"],
@@ -175,13 +172,10 @@ class QdrantVectorStore:
         if not query_texts:
             raise ValueError("Query cannot be empty")
 
-        vecs = self._encode(query_texts)
+        vecs = embed(query_texts, "query")
         responses = self.client.query_batch_points(
             CHUNKS,
-            requests=[
-                models.QueryRequest(query=v.tolist(), limit=k * 3, with_payload=True)
-                for v in vecs
-            ],
+            requests=[models.QueryRequest(query=v, limit=k * 3, with_payload=True) for v in vecs],
         )
         total: dict[str, float] = {}
         best: dict[str, tuple[float, str]] = {}

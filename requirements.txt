@@ -145,11 +145,7 @@ tenacity==9.2.1
 textblob==0.20.1
 threadpoolctl==3.7.0
 tokenizers==0.23.3
-torch==2.14.1+cu130
-torchaudio==2.11.0+cu130
-torchvision==0.29.1+cu130
 tqdm==4.70.1
-transformers==5.22.1
 truststore==0.10.5
 tweepy==4.17.0
 typer==0.27.3
@@ -166,3 +162,4 @@ xlsxwriter==3.3.1
 xxhash==4.0.2
 yarl==1.25.1
 zstandard==0.25.0
+voyageai

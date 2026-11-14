@@ -15,4 +15,4 @@ PyYAML==6.0.3
 PyJWT==2.15.1
 typing_extensions==4.16.0
 voyageai
-qdrant-client
+qdrant-client 

@@ -13,7 +13,8 @@ export default function Chat() {
   const [up, setUp] = useState({ product: "", kind: "catalogue", file: null });
   const [upMsg, setUpMsg] = useState(null);
   const [upBusy, setUpBusy] = useState(false);
-  const [menu, setMenu] = useState(false); // product drawer (phones only)
+  const [menu, setMenu] = useState(false);
+  const [fk, setFk] = useState(0);
   const end = useRef();
 
   const load = () => api.products().then(setProducts).catch((e) => setUpMsg({ ok: false, text: e.message }));
@@ -71,6 +72,7 @@ export default function Chat() {
       const r = await api.upload(fd);
       setUpMsg({ ok: true, text: `Saved "${r.product}" (${r.chunks} chunks)` });
       setUp({ ...up, file: null });
+      setFk((k) => k + 1);
       load();
     } catch (e) {
       setUpMsg({ ok: false, text: e.message });
@@ -130,11 +132,12 @@ export default function Chat() {
             <option value="manual">User manual</option>
           </select>
           <input
-            key={up.file ? up.file.name : "empty"}
+            key={fk}
             type="file"
             accept=".pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif"
             onChange={(e) => setUp({ ...up, file: e.target.files[0] || null })}
           />
+          {up.file && <small className="note">{up.file.name}</small>}
           <button className="primary" onClick={upload} disabled={!up.product.trim() || !up.file || upBusy}>
             {upBusy ? "Uploading..." : "Upload"}
           </button>

@@ -107,7 +107,6 @@ export default function Files() {
         <p className="desc">Upload a technical specification (image, PDF, Word, Excel, PPT). Best matching products are found by semantic search.</p>
         <div className="row">
           <input
-            key={spec ? spec.name : "e"}
             type="file"
             accept=".pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg"
             onChange={(e) => setSpec(e.target.files[0] || null)}
